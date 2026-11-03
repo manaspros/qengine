@@ -1,0 +1,7 @@
+e3a_share90_off          hit   0.0%  req/s    2.17  TTFT p50   1368.0 p99   3850.8 ms  E2E p50   7382.3 ms  out tok/s      554
+e3a_share90_on           hit   0.0%  req/s    2.14  TTFT p50    770.6 p99   4189.9 ms  E2E p50   7423.9 ms  out tok/s      547
+e3b_share0_on            hit   0.0%  req/s    0.82  TTFT p50   1638.8 p99  15022.0 ms  E2E p50  19370.5 ms  out tok/s      211
+e3b_share50_on           hit  36.7%  req/s    1.17  TTFT p50   1031.9 p99  12639.3 ms  E2E p50  13248.4 ms  out tok/s      299
+e3b_share75_on           hit  36.7%  req/s    1.17  TTFT p50   1032.4 p99  12563.0 ms  E2E p50  13259.7 ms  out tok/s      299
+e3b_share90_on           hit  75.9%  req/s    2.15  TTFT p50    563.8 p99   6901.6 ms  E2E p50   6999.0 ms  out tok/s      550
+e3b_share90_off          hit   0.0%  req/s    0.83  TTFT p50   2000.0 p99  14978.5 ms  E2E p50  19353.0 ms  out tok/s      212

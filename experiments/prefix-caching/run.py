@@ -1,5 +1,5 @@
 """Lesson 26: prefix caching on vs off, Qwen2.5-1.5B bf16, vLLM on one RTX 5090.
-Run in an env with vLLM 0.32.0:  python run.py [e1|e2]   (VLLM=/path/to/vllm to pick the binary)
+Run in an env with vLLM 0.32.0:  python run.py [e1|e2|e3a|e3b]   (env VLLM, MODEL, SERVE, OUT override)
 
 For each config we start a fresh `vllm serve` (so the cache starts empty), warm it up with a
 different random seed (so warm-up prompts do NOT pre-fill the cache with the measured prefixes),
@@ -14,8 +14,10 @@ import json, os, re, subprocess, sys, time, urllib.request
 ROOT = os.path.dirname(os.path.abspath(__file__))
 VLLM = os.environ.get("VLLM", "vllm")
 MODEL = os.environ.get("MODEL", "Qwen/Qwen2.5-1.5B-Instruct")
+# `vllm serve` flags; the 27B run overrides them (see e3 below)
+SERVE = os.environ.get("SERVE", "--dtype bfloat16 --gpu-memory-utilization 0.6 --max-model-len 4096").split()
 PORT = 8026
-OUT = os.path.join(ROOT, "results")
+OUT = os.environ.get("OUT", os.path.join(ROOT, "results"))
 os.makedirs(OUT, exist_ok=True)
 
 
@@ -27,12 +29,11 @@ def metrics():
 
 
 def serve(cache: bool):
-    args = [VLLM, "serve", MODEL, "--port", str(PORT), "--dtype", "bfloat16",
-            "--gpu-memory-utilization", "0.6", "--max-model-len", "4096"]
+    args = [VLLM, "serve", MODEL, "--port", str(PORT), *SERVE]
     if not cache:
         args.append("--no-enable-prefix-caching")  # V1 turns prefix caching on by default
     p = subprocess.Popen(args, stdout=open(os.path.join(OUT, "server.log"), "a"), stderr=subprocess.STDOUT)
-    for _ in range(300):  # wait until /health answers (model load + torch.compile + graph capture)
+    for _ in range(900):  # wait until /health answers (model load + torch.compile + graph capture)
         try:
             if p.poll() is not None: sys.exit("server exited, see results/server.log")
             urllib.request.urlopen(f"http://localhost:{PORT}/health"); return p
@@ -88,3 +89,15 @@ if __name__ == "__main__":
         for cache in (False, True):  # control: short outputs -> prefill is most of the work
             run(f"e2_share90_out16_{'on' if cache else 'off'}", cache,
                 prefix=922, suffix=102, out=16, n=4096, conc=256, nprefix=8)
+    # Qwen3.8-27B (hybrid: 48 Gated DeltaNet + 16 attention layers). vLLM sets the cache block to
+    # 1,568 tokens (an attention page sized to hold one DeltaNet state page), so hits come in
+    # 1,568-token units and only full blocks count.
+    if only == "e3a":  # the article's shape: 1,024-token prompts are shorter than one block -> expect 0 hits
+        for cache in (False, True):
+            run(f"e3a_share90_{'on' if cache else 'off'}", cache,
+                prefix=922, suffix=102, out=256, n=128, conc=16, nprefix=8)
+    if only == "e3b":  # 4,000-token prompts; a hit can cover at most 1,568 or 3,136 of them
+        for share in (0, 50, 75, 90):
+            pre = round(4000 * share / 100)
+            run(f"e3b_share{share}_on", True, prefix=pre, suffix=4000 - pre, out=256, n=128, conc=16, nprefix=4)
+        run("e3b_share90_off", False, prefix=3600, suffix=400, out=256, n=128, conc=16, nprefix=4)

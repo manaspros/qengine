@@ -1,5 +1,5 @@
 Lesson 26: prefix caching on vs off. Qwen2.5-1.5B-Instruct bf16, vLLM 0.32.0, RTX 5090, 2026-11-03.
-Command: python run.py [e1|e2]   (raw vllm bench JSON in results/)
+Command: python run.py [e1|e2|e3a|e3b]   (raw vllm bench JSON in results/, results27b/)
 Fresh server per config, warm-up with a different seed (cache holds no measured prefix), hit rate
 from vllm:prefix_cache_{hits,queries}_total deltas. ONE run per config (no n=5): treat <5% as noise.
 
@@ -28,3 +28,26 @@ E2  throughput, all 2,048 requests at once (256 in flight), 1,024 in / 256 out, 
   model is compute-bound in both phases, so time ~ tokens processed: f ~ 1024/(1024+256) = 0.8.
   TPOT falls 37.8 -> 11.9 ms because each decode step no longer shares its token budget with
   prefill chunks (chunked prefill mixes them into the same step).
+
+E3  Qwen3.8-27B (hybrid: 48 Gated DeltaNet + 16 attention layers), gittensor NVFP4 + Marlin, vLLM 0.32.0,
+    --max-model-len 8192 --max-num-seqs 64 --gpu-memory-utilization 0.88 --language-model-only.
+    128 requests, 16 in flight, 256 output tokens, one run per config. Raw data in results27b/.
+    vLLM log: "Setting attention block size to 1568 tokens to ensure that attention page size is >= mamba
+    page size." One DeltaNet state page per layer ~3.2 MB = 1,568 tokens x 4 kv heads x 256 x (K,V) x 1 B fp8.
+    Hits are counted in whole 1,568-token blocks (vLLM 'align' mode snapshots the DeltaNet state only there).
+
+                                   hit     req/s   vs 0%   TPOT mean   TTFT p50
+  1,024-token prompts, 90% shared
+    cache off                       0%      2.17   -       23.4 ms     1368 ms
+    cache on                        0%      2.14   0.99x   25.6 ms      771 ms   <- no prompt fills one block
+  4,000-token prompts
+    0% shared,  on                  0%      0.82   1.00x   66.2 ms     1639 ms
+    50% shared, on  (2,000 shared) 36.7%    1.17   1.43x   46.3 ms     1032 ms   1 block = 1,568 cached
+    75% shared, on  (3,000 shared) 36.7%    1.17   1.43x   46.3 ms     1032 ms   still 1 block
+    90% shared, on  (3,600 shared) 75.9%    2.15   2.62x   24.8 ms      564 ms   2 blocks = 3,136 cached
+    90% shared, off                 0%      0.83   -       64.9 ms     2000 ms
+
+  Amdahl: 2.62x at 75.9% -> f = 0.81; predicts 1/(1 - 0.81 x 0.367) = 1.42x at 36.7% (measured 1.43x).
+  Hit < cached/prompt (39.2%, 78.4%) because each prefix's first request misses (4 prefixes, 128 requests).
+  Unexplained: TTFT p50 differs between cache off/on at 0 hits (1,368 vs 771 ms) while req/s is equal;
+  the two configs use different cache layouts (mamba_cache_mode none vs align). Not investigated.
