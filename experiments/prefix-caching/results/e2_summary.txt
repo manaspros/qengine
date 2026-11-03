@@ -1,0 +1,7 @@
+e2_share0_on             hit   0.0%  req/s   24.86  TTFT p50    254.2 p99   5631.7 ms  E2E p50  10542.2 ms  out tok/s     6363
+e2_share50_on            hit  49.8%  req/s   44.55  TTFT p50    165.1 p99   2730.5 ms  E2E p50   5806.3 ms  out tok/s    11404
+e2_share75_on            hit  74.7%  req/s   62.28  TTFT p50    156.0 p99   1437.0 ms  E2E p50   4126.7 ms  out tok/s    15945
+e2_share90_on            hit  88.7%  req/s   79.21  TTFT p50    147.7 p99    770.2 ms  E2E p50   3229.2 ms  out tok/s    20277
+e2_share90_off           hit   0.0%  req/s   25.54  TTFT p50    245.2 p99   5510.0 ms  E2E p50  10260.7 ms  out tok/s     6537
+e2_share90_out16_off     hit   0.0%  req/s   59.44  TTFT p50   3800.3 p99   3832.9 ms  E2E p50   4296.5 ms  out tok/s      951
+e2_share90_out16_on      hit  88.9%  req/s  319.75  TTFT p50    146.0 p99    692.6 ms  E2E p50    791.2 ms  out tok/s     5116

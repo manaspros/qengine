@@ -1,0 +1,30 @@
+Lesson 26: prefix caching on vs off. Qwen2.5-1.5B-Instruct bf16, vLLM 0.32.0, RTX 5090, 2026-11-03.
+Command: python run.py [e1|e2]   (raw vllm bench JSON in results/)
+Fresh server per config, warm-up with a different seed (cache holds no measured prefix), hit rate
+from vllm:prefix_cache_{hits,queries}_total deltas. ONE run per config (no n=5): treat <5% as noise.
+
+E1  latency, 1 user at a time, 1,000 shared + 24 unique prompt tokens, 40 requests
+                      hit    TTFT p50   E2E p50
+  out 16   off        0%     21.1 ms    67.4 ms
+  out 16   on       94.5%     8.2 ms    54.5 ms    TTFT 2.6x, request 1.24x
+  out 512  off        0%     21.7 ms  1618.6 ms
+  out 512  on       94.5%     8.8 ms  1608.5 ms    TTFT 2.5x, request 1.006x
+  -> TTFT gain is big; whole-request gain is set by decode's share (Amdahl).
+  -> TTFT does not go to ~0: remaining ~8 ms = 24-token suffix + fixed per-request cost (HTTP,
+     scheduling, one step). Hit 94.5% < 1000/1024: only FULL 16-token blocks are cached (992),
+     and the first request misses.
+
+E2  throughput, all 2,048 requests at once (256 in flight), 1,024 in / 256 out, 8 shared prefixes
+                      hit    req/s   vs 0%   TPOT mean   TTFT p50 / p99
+  share 0%   on       0%     24.9    1.00x   37.8 ms     254 / 5632 ms
+  share 50%  on     49.8%    44.6    1.79x   21.1 ms     165 / 2731 ms
+  share 75%  on     74.7%    62.3    2.51x   15.1 ms     156 / 1437 ms
+  share 90%  on     88.7%    79.2    3.19x   11.9 ms     148 /  770 ms
+  share 90%  off      0%     25.5    (control: cache off ~= share 0%, so hashing costs ~nothing)
+  out 16, share 90%: off 59.4 req/s -> on 319.8 req/s = 5.4x
+
+  Article (Qwen3-30B-A3B FP8, H100): 0 -> 89% hits = 1.82x. Ours: 3.19x. Amdahl back-solve:
+  1/(1 - 0.887 f) = 3.19 -> f = 0.77 here vs ~0.5 in the article. At 256 in flight our 1.5B dense
+  model is compute-bound in both phases, so time ~ tokens processed: f ~ 1024/(1024+256) = 0.8.
+  TPOT falls 37.8 -> 11.9 ms because each decode step no longer shares its token budget with
+  prefill chunks (chunked prefill mixes them into the same step).
